@@ -46,45 +46,27 @@ export default function InferencePage() {
   const [previewTitle, setPreviewTitle] = useState('');
   const [overlayOpacity, setOverlayOpacity] = useState(60);
 
-  // 1. Fetch Projects & Trained Models
-  useEffect(() => {
+  // Keep track of any status updates received via WS before the POST API request resolves
+  const unmatchedStatusUpdates = useRef<Record<number, { status: 'processing' | 'completed' | 'failed'; maskUrl?: string; maskColor?: string; error?: string }>>({});
+
+  // Fetch Projects
+  const fetchProjects = React.useCallback(() => {
     if (!user?.id) return;
-    
-    // Fetch Projects
     api.get(`/project/user/${user.id}`).then(res => {
       if (res.data.success) setProjects(res.data.data || []);
     }).catch(() => toast.error("Failed to load projects"));
+  }, [user?.id]);
 
-    // Fetch Trained Models
+  // Fetch Trained Models
+  const fetchTrainedModels = React.useCallback(() => {
+    if (!user?.id) return;
     api.get(`/training/trained-models?user_id=${user.id}`).then(res => {
       if (res.data.success) setTrainedModels(res.data.data || []);
     }).catch(() => toast.error("Failed to load trained models"));
   }, [user?.id]);
 
-  // 2. Fetch Groups when Project changes
-  useEffect(() => {
-    if (selectedProject) {
-      api.get(`/group/`).then(res => {
-        if (res.data.success) {
-          const allGroups = res.data.data || [];
-          const projectGroups = allGroups.filter((g: any) => 
-            String(g.project_id) === String(selectedProject) || String(g.ProjectID) === String(selectedProject)
-          );
-          if (projectGroups.length === 0 && allGroups.length > 0) {
-            setGroups(allGroups);
-          } else {
-            setGroups(projectGroups);
-          }
-        }
-      }).catch(() => toast.error("Failed to load groups"));
-    } else {
-      setGroups([]);
-      setSelectedGroup('');
-    }
-  }, [selectedProject]);
-
-  // 3. Load Gallery when Group changes
-  const fetchGallery = async () => {
+  // Fetch Gallery Items
+  const fetchGallery = React.useCallback(async () => {
     if (!selectedGroup) {
       setGalleryItems([]);
       return;
@@ -119,88 +101,153 @@ export default function InferencePage() {
     } finally {
       setIsGalleryLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchGallery();
   }, [selectedGroup]);
 
-  // 4. WebSocket log tracking for prediction jobs
+  // 1. Fetch Projects & Trained Models
+  useEffect(() => {
+    fetchProjects();
+    fetchTrainedModels();
+  }, [fetchProjects, fetchTrainedModels]);
+
+  // 2. Fetch Groups when Project changes
+  useEffect(() => {
+    if (selectedProject) {
+      api.get(`/group/`).then(res => {
+        if (res.data.success) {
+          const allGroups = res.data.data || [];
+          const projectGroups = allGroups.filter((g: any) => 
+            String(g.project_id) === String(selectedProject) || String(g.ProjectID) === String(selectedProject)
+          );
+          if (projectGroups.length === 0 && allGroups.length > 0) {
+            setGroups(allGroups);
+          } else {
+            setGroups(projectGroups);
+          }
+        }
+      }).catch(() => toast.error("Failed to load groups"));
+    } else {
+      setGroups([]);
+      setSelectedGroup('');
+    }
+  }, [selectedProject]);
+
+  // 3. Load Gallery when Group changes
+  useEffect(() => {
+    fetchGallery();
+  }, [fetchGallery]);
+
+  // 4. WebSocket log tracking for prediction jobs & gallery live reload
   useEffect(() => {
     const token = localStorage.getItem('access_token');
-    if (!token || predictions.length === 0) return;
+    if (!token) return;
 
     let ws: WebSocket;
-    const backendUrl = api.defaults.baseURL || 'http://localhost:8080';
-    const wsUrl = backendUrl.replace(/^http/, 'ws') + '/ws/notifications';
-    
-    ws = new WebSocket(wsUrl, [token]);
+    let reconnectTimeout: any;
 
-    ws.onmessage = async (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        
-        if (msg.type === 'prediction_started') {
-          setPredictions(prev => prev.map(p => 
-            p.dataId === msg.data_id ? { ...p, status: 'processing' } : p
-          ));
-        } else if (msg.type === 'prediction_completed') {
-          // Retrieve mask image bin and process header
-          let maskUrl = '';
-          let maskColor = '#00ffcc';
+    const connectWS = () => {
+      const backendUrl = api.defaults.baseURL || 'http://localhost:8080';
+      const wsUrl = backendUrl.replace(/^http/, 'ws') + '/ws/notifications';
+      
+      ws = new WebSocket(wsUrl, [token]);
+
+      ws.onmessage = async (event) => {
+        try {
+          const msg = JSON.parse(event.data);
           
-          if (msg.mask_path && msg.status === 'completed') {
-            const cleanPath = msg.mask_path.replace(/\\/g, '/').replace(/^\/+/, '');
-            const fetchUrl = `${backendUrl.replace(/\/$/, '')}/${cleanPath}`;
-            
-            try {
-              const response = await fetch(fetchUrl);
-              if (response.ok) {
-                const arrayBuffer = await response.arrayBuffer();
-                const uint8 = new Uint8Array(arrayBuffer);
-                let imageBytes = uint8;
-                
-                // Strip custom 4-byte header if not pure PNG magic bytes
-                if (uint8.length > 4 && uint8[0] !== 0x89) {
-                  const r = uint8[0].toString(16).padStart(2, '0');
-                  const g = uint8[1].toString(16).padStart(2, '0');
-                  const b = uint8[2].toString(16).padStart(2, '0');
-                  maskColor = `#${r}${g}${b}`;
-                  imageBytes = uint8.slice(4);
-                }
-                
-                const blob = new Blob([imageBytes], { type: 'image/png' });
-                maskUrl = URL.createObjectURL(blob);
+          if (msg.type === 'prediction_started') {
+            setPredictions(prev => {
+              const exists = prev.some(p => p.dataId === msg.data_id);
+              if (!exists) {
+                unmatchedStatusUpdates.current[msg.data_id] = { status: 'processing' };
+                return prev;
               }
-            } catch (err) {
-              console.error("Failed to load completed mask bin file", err);
+              return prev.map(p => 
+                p.dataId === msg.data_id ? { ...p, status: 'processing' } : p
+              );
+            });
+          } else if (msg.type === 'prediction_completed') {
+            // Retrieve mask image bin and process header
+            let maskUrl = '';
+            let maskColor = '#00ffcc';
+            
+            if (msg.mask_path && msg.status === 'completed') {
+              const cleanPath = msg.mask_path.replace(/\\/g, '/').replace(/^\/+/, '');
+              const fetchUrl = `${backendUrl.replace(/\/$/, '')}/${cleanPath}`;
+              
+              try {
+                const response = await fetch(fetchUrl);
+                if (response.ok) {
+                  const arrayBuffer = await response.arrayBuffer();
+                  const uint8 = new Uint8Array(arrayBuffer);
+                  let imageBytes = uint8;
+                  
+                  // Strip custom 4-byte header if not pure PNG magic bytes
+                  if (uint8.length > 4 && uint8[0] !== 0x89) {
+                    const r = uint8[0].toString(16).padStart(2, '0');
+                    const g = uint8[1].toString(16).padStart(2, '0');
+                    const b = uint8[2].toString(16).padStart(2, '0');
+                    maskColor = `#${r}${g}${b}`;
+                    imageBytes = uint8.slice(4);
+                  }
+                  
+                  const blob = new Blob([imageBytes], { type: 'image/png' });
+                  maskUrl = URL.createObjectURL(blob);
+                }
+              } catch (err) {
+                console.error("Failed to load completed mask bin file", err);
+              }
             }
-          }
 
-          setPredictions(prev => prev.map(p => 
-            p.dataId === msg.data_id 
-              ? { 
-                  ...p, 
-                  status: msg.status === 'completed' ? 'completed' : 'failed',
+            const targetStatus = msg.status === 'completed' ? 'completed' : 'failed';
+            const targetError = msg.error || undefined;
+
+            setPredictions(prev => {
+              const exists = prev.some(p => p.dataId === msg.data_id);
+              if (!exists) {
+                unmatchedStatusUpdates.current[msg.data_id] = {
+                  status: targetStatus,
                   maskUrl: maskUrl || undefined,
                   maskColor,
-                  error: msg.error || undefined
-                } 
-              : p
-          ));
+                  error: targetError
+                };
+                return prev;
+              }
+              return prev.map(p => 
+                p.dataId === msg.data_id 
+                  ? { 
+                      ...p, 
+                      status: targetStatus,
+                      maskUrl: maskUrl || undefined,
+                      maskColor,
+                      error: targetError
+                    } 
+                  : p
+              );
+            });
 
-          // Reload segmented gallery when any prediction finishes
-          fetchGallery();
+            // Reload segmented gallery when any prediction finishes
+            fetchGallery();
+          } else if (msg.type === 'training_status_update') {
+            // Reload trained models dropdown so newly trained models appear
+            fetchTrainedModels();
+          }
+        } catch (err) {
+          console.error("Inference ws listener error:", err);
         }
-      } catch (err) {
-        console.error("Inference ws listener error:", err);
-      }
+      };
+
+      ws.onclose = () => {
+        reconnectTimeout = setTimeout(connectWS, 3000);
+      };
     };
+
+    connectWS();
 
     return () => {
       if (ws) ws.close();
+      clearTimeout(reconnectTimeout);
     };
-  }, [predictions]);
+  }, [fetchGallery, fetchTrainedModels]);
 
   // File Handlers
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,7 +281,7 @@ export default function InferencePage() {
       localFileUrl: URL.createObjectURL(file),
       status: 'queued' as const,
     }));
-    setPredictions(tempPredictions);
+    setPredictions(prev => [...prev, ...tempPredictions]);
 
     const formData = new FormData();
     formData.append("user_id", String(user?.id || 0));
@@ -255,11 +302,32 @@ export default function InferencePage() {
         toast.success("Inference requests queued successfully!", { id: toastId });
         const dataIds = res.data.data?.data_ids || [];
         
-        // Link returned data_ids to our prediction rows
-        setPredictions(prev => prev.map((pred, index) => ({
-          ...pred,
-          dataId: dataIds[index] || undefined
-        })));
+        // Link returned data_ids to our prediction rows and apply any unmatched status updates
+        setPredictions(prev => {
+          const startIndex = prev.length - selectedFiles.length;
+          return prev.map((pred, index) => {
+            if (index < startIndex) return pred; // Keep older items unchanged
+            const dataId = dataIds[index - startIndex];
+            if (!dataId) return pred;
+
+            const pendingUpdate = unmatchedStatusUpdates.current[dataId];
+            if (pendingUpdate) {
+              delete unmatchedStatusUpdates.current[dataId];
+              return {
+                ...pred,
+                dataId,
+                status: pendingUpdate.status,
+                maskUrl: pendingUpdate.maskUrl,
+                maskColor: pendingUpdate.maskColor,
+                error: pendingUpdate.error
+              };
+            }
+            return {
+              ...pred,
+              dataId
+            };
+          });
+        });
       }
     } catch (err: any) {
       toast.error(`Failed to submit predictions: ${err.response?.data?.message || err.message}`);

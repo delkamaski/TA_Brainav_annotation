@@ -13,6 +13,7 @@ import DataDetailedPage from './pages/DataDetailedPage';
 import ModelsPage from './pages/ModelsPage';
 import ModelEditorPage from './pages/ModelEditorPage';
 import TrainingPage from './pages/TrainingPage';
+import InferencePage from './pages/InferencePage';
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -37,6 +38,7 @@ function AppRoutes() {
       <Route path="/models" element={<ProtectedRoute><ModelsPage /></ProtectedRoute>} />
       <Route path="/models/:modelId/editor" element={<ProtectedRoute><ModelEditorPage /></ProtectedRoute>} />
       <Route path="/training" element={<ProtectedRoute><TrainingPage /></ProtectedRoute>} />
+      <Route path="/inference" element={<ProtectedRoute><InferencePage /></ProtectedRoute>} />
     </Routes>
   );
 }

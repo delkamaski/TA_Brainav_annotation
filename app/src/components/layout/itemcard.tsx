@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MoreVertical, Edit2, Trash2, Download, Folder, Image as ImageIcon } from 'lucide-react';
+import { MoreVertical, Edit2, Trash2, Download, Folder, Image as ImageIcon, Eye } from 'lucide-react';
 
 interface ItemCardProps {
   name: string;
@@ -9,9 +9,10 @@ interface ItemCardProps {
   onRename: () => void;
   onExport: () => void;
   onDelete: () => void;
+  onViewMask?: () => void;
 }
 
-export function ItemCard({ name, dateCreated, thumbnailSrc, onClick, onRename, onExport, onDelete }: ItemCardProps) {
+export function ItemCard({ name, dateCreated, thumbnailSrc, onClick, onRename, onExport, onDelete, onViewMask }: ItemCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
 
@@ -38,6 +39,11 @@ export function ItemCard({ name, dateCreated, thumbnailSrc, onClick, onRename, o
         <>
           <div className="fixed inset-0 z-20" onClick={(e) => { e.stopPropagation(); setMenuOpen(false); }} />
           <div className="absolute top-10 right-3 w-40 bg-white rounded-xl shadow-lg border border-gray-100 z-30 overflow-hidden flex flex-col py-1">
+            {onViewMask && (
+              <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onViewMask(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-[#0091AD] text-left">
+                <Eye size={14} /> View Mask
+              </button>
+            )}
             <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onRename(); }} className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-[#0091AD] text-left">
               <Edit2 size={14} /> Rename
             </button>

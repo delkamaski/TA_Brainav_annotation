@@ -6,7 +6,8 @@ import {
   Box, 
   Activity, 
   Settings, 
-  ChevronLeft 
+  ChevronLeft,
+  Play
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -25,6 +26,7 @@ export function Sidebar({ isMinimized, onToggle }: SidebarProps) {
     { path: '/projects', label: 'Projects', icon: Folder },
     { path: '/models', label: 'Models', icon: Box },
     { path: '/training', label: 'Training', icon: Activity },
+    { path: '/inference', label: 'Inference', icon: Play },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];
 

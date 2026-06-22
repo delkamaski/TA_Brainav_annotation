@@ -6,7 +6,7 @@ import { ItemCard } from '../components/layout/itemcard';
 import { CreateModal } from '../components/layout/createmodal';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Plus, Search, ArrowUpDown } from 'lucide-react';
+import { Plus, Search, ArrowUpDown, X, Eye, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function DataPage() {
@@ -20,6 +20,17 @@ export default function DataPage() {
   const [projectName, setProjectName] = useState(projectId);
   const [groupName, setGroupName] = useState(groupId);
   const [dataItems, setDataItems] = useState<any[]>([]);
+
+  // Segmentation indicators & mapping
+  const [segmentedDataIds, setSegmentedDataIds] = useState<Set<number>>(new Set());
+  const [dataMaskPaths, setDataMaskPaths] = useState<{[key: number]: string}>({});
+
+  // Active Mask Preview States
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewMask, setPreviewMask] = useState<string | null>(null);
+  const [previewMaskColor, setPreviewMaskColor] = useState('#ff0000');
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [overlayOpacity, setOverlayOpacity] = useState(60);
 
   useEffect(() => {
     const fetchBreadcrumbNames = async () => {
@@ -42,6 +53,22 @@ export default function DataPage() {
       const res = await api.get(`/data/groups/${groupId}`);
       if (res.data.success) {
         setDataItems(res.data.data || []);
+      }
+
+      // Fetch segmentations for the group
+      const segRes = await api.get(`/segmentationclass/group/${groupId}`);
+      if (segRes.data.success) {
+        const segs = segRes.data.data || [];
+        const segSet = new Set<number>();
+        const pathMap: {[key: number]: string} = {};
+        
+        segs.forEach((s: any) => {
+          segSet.add(s.data_id);
+          pathMap[s.data_id] = s.mask_path;
+        });
+        
+        setSegmentedDataIds(segSet);
+        setDataMaskPaths(pathMap);
       }
     } catch (err) { 
       toast.error("Failed to fetch data"); 
@@ -88,6 +115,43 @@ export default function DataPage() {
       fetchData(); 
     } catch (err) { 
       toast.error("Failed to delete data"); 
+    }
+  };
+
+  // Inspect existing mask
+  const openInspectModal = async (title: string, imgPath: string, maskPath: string) => {
+    const backendUrl = api.defaults.baseURL || 'http://localhost:8080';
+    const cleanImgPath = imgPath.startsWith('http') ? imgPath : `${backendUrl.replace(/\/$/, '')}/${imgPath.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+    const cleanMaskPath = maskPath.startsWith('http') ? maskPath : `${backendUrl.replace(/\/$/, '')}/${maskPath.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+
+    setPreviewImage(cleanImgPath);
+    setPreviewTitle(title);
+    setPreviewMask(null);
+
+    try {
+      const response = await fetch(cleanMaskPath);
+      if (response.ok) {
+        const arrayBuffer = await response.arrayBuffer();
+        const uint8 = new Uint8Array(arrayBuffer);
+        let imageBytes = uint8;
+        let maskColor = '#00ff00';
+        
+        // Strip custom header
+        if (uint8.length > 4 && uint8[0] !== 0x89) {
+          const r = uint8[0].toString(16).padStart(2, '0');
+          const g = uint8[1].toString(16).padStart(2, '0');
+          const b = uint8[2].toString(16).padStart(2, '0');
+          maskColor = `#${r}${g}${b}`;
+          imageBytes = uint8.slice(4);
+        }
+
+        const blob = new Blob([imageBytes], { type: 'image/png' });
+        setPreviewMask(URL.createObjectURL(blob));
+        setPreviewMaskColor(maskColor);
+      }
+    } catch (e) {
+      console.error("Error loading mask bin file:", e);
+      toast.error("Failed to parse segmentation mask data.");
     }
   };
 
@@ -139,20 +203,30 @@ export default function DataPage() {
             const fileName = data.img_path?.split(/[\\/]/).pop() || `Data #${data.id}`;
             const normalizedPath = data.img_path?.replace(/\\/g, '/');
             
-            // FIX: Point directly to your Go backend port (Change 8080 if your Go server uses a different port)
             const backendUrl = api.defaults.baseURL || 'http://localhost:8080';
             const imgUrl = normalizedPath ? `${backendUrl.replace(/\/$/, '')}/${normalizedPath}` : undefined;
+
+            const isSegmented = segmentedDataIds.has(data.id);
 
             return (
               <ItemCard
                 key={data.id}
                 name={`${fileName} (${data.type})`}
-                dateCreated={new Date(data.created_at || Date.now()).toLocaleDateString()}
+                dateCreated={
+                  isSegmented 
+                    ? `🟢 Segmented | ${new Date(data.created_at || Date.now()).toLocaleDateString()}` 
+                    : new Date(data.created_at || Date.now()).toLocaleDateString()
+                }
                 thumbnailSrc={imgUrl}
                 onClick={() => navigate(`/projects/${projectId}/groups/${groupId}/data/${data.id}`)}
                 onRename={() => toast.info('Renaming individual images is not supported.')}
                 onExport={() => alert(`Exporting data #${data.id}`)}
                 onDelete={() => handleDeleteData(data.id)}
+                onViewMask={
+                  isSegmented 
+                    ? () => openInspectModal(fileName, data.img_path, dataMaskPaths[data.id])
+                    : undefined
+                }
               />
             );
           })
@@ -165,6 +239,99 @@ export default function DataPage() {
         onConfirm={handleCreateData} 
         type="data"
       />
+
+      {/* LIGHTWEIGHT INTERACTIVE COMPARISON OVERLAY MODAL */}
+      {previewImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-xl w-full max-w-4xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* Header */}
+            <div className="bg-[#393E41] p-5 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-[#0091AD]" />
+                <h3 className="text-lg font-bold truncate max-w-[450px]" title={previewTitle}>Segmented Mask Preview: {previewTitle}</h3>
+              </div>
+              <button 
+                onClick={() => {
+                  setPreviewImage(null);
+                  setPreviewMask(null);
+                }}
+                className="p-1.5 rounded-full hover:bg-white/10 text-white/80 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Viewer Workspace */}
+            <div className="p-8 overflow-y-auto flex-1 flex flex-col gap-6 items-center justify-center min-h-[350px]">
+              
+              {/* Dual Presentation Grid */}
+              <div className="grid grid-cols-2 gap-8 w-full max-w-3xl items-center justify-center">
+                
+                {/* Side-by-Side: Original image */}
+                <div className="flex flex-col gap-2 items-center">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Original Scan</span>
+                  <div className="border border-gray-200 rounded-2xl overflow-hidden aspect-square bg-black flex items-center justify-center w-full max-w-[320px] max-h-[320px]">
+                    <img src={previewImage} alt="Original Scan" className="max-w-full max-h-full object-contain pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Side-by-Side: Opacity Overlay */}
+                <div className="flex flex-col gap-2 items-center">
+                  <span className="text-xs font-bold text-[#0091AD] uppercase tracking-wide">Mask Overlay</span>
+                  <div className="border border-gray-200 rounded-2xl overflow-hidden aspect-square bg-black flex items-center justify-center relative w-full max-w-[320px] max-h-[320px]">
+                    <img src={previewImage} alt="Original Scan" className="max-w-full max-h-full object-contain absolute inset-0 m-auto pointer-events-none" />
+                    {previewMask ? (
+                      <img 
+                        src={previewMask} 
+                        alt="Segmented Mask" 
+                        className="max-w-full max-h-full object-contain absolute inset-0 m-auto pointer-events-none transition-opacity"
+                        style={{ 
+                          opacity: overlayOpacity / 100,
+                          filter: `drop-shadow(0 0 1px ${previewMaskColor})`
+                        }}
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 gap-1.5">
+                        <span className="animate-spin text-[#0091AD] text-lg font-bold">...</span> Loading mask...
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Slider Controller */}
+              <div className="w-full max-w-md bg-gray-50 border border-gray-200 rounded-2xl p-4 flex flex-col gap-2 mt-4">
+                <div className="flex justify-between items-center text-xs text-gray-600 font-bold">
+                  <span className="flex items-center gap-1">Mask Opacity</span>
+                  <span>{overlayOpacity}%</span>
+                </div>
+                <input 
+                  type="range" min="0" max="100" 
+                  value={overlayOpacity} onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+                  className="w-full accent-[#0091AD] cursor-pointer"
+                />
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end shrink-0">
+              <Button 
+                onClick={() => {
+                  setPreviewImage(null);
+                  setPreviewMask(null);
+                }}
+                className="bg-[#393E41] hover:bg-[#2d3133] text-white px-6"
+              >
+                Close Viewer
+              </Button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

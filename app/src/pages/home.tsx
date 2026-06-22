@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../utils/api';
 import DashboardLayout from '../components/layout/dashboard';
@@ -7,6 +7,24 @@ import { toast } from 'sonner';
 export default function HomePage() {
   const navigate = useNavigate();
   const [recentGroups, setRecentGroups] = useState<any[]>([]);
+  const [trainingLogs, setTrainingLogs] = useState<string[]>([
+    'Initializing training log stream...',
+  ]);
+  const [inferenceLogs, setInferenceLogs] = useState<string[]>([
+    'Initializing inference log stream...',
+  ]);
+
+  const trainingEndRef = useRef<HTMLDivElement>(null);
+  const inferenceEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    trainingEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [trainingLogs]);
+
+  useEffect(() => {
+    inferenceEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [inferenceLogs]);
 
   useEffect(() => {
     // Fetch recent groups
@@ -26,32 +44,111 @@ export default function HomePage() {
     fetchGroups();
   }, []);
 
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+
+    let ws: WebSocket;
+    let reconnectTimeout: any;
+
+    const connectWS = () => {
+      const backendUrl = api.defaults.baseURL || 'http://localhost:8080';
+      const wsUrl = backendUrl.replace(/^http/, 'ws') + '/ws/notifications';
+      
+      ws = new WebSocket(wsUrl, [token]);
+
+      ws.onopen = () => {
+        setTrainingLogs(prev => [...prev, 'Connected to notification server.']);
+        setInferenceLogs(prev => [...prev, 'Connected to notification server.']);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'training_epoch_update') {
+            const logStr = `[Job #${data.job_id}] Epoch ${data.epoch}: ` + 
+              Object.entries(data.logs || {})
+                .map(([k, v]: [string, any]) => `${k}: ${typeof v === 'number' ? v.toFixed(4) : v}`)
+                .join(' | ');
+            setTrainingLogs(prev => [...prev, logStr]);
+          } else if (data.type === 'training_status_update') {
+            let logStr = `[Job #${data.job_id}] Status: ${data.status.toUpperCase()}`;
+            if (data.result_path) logStr += ` | Result: ${data.result_path}`;
+            if (data.error) logStr += ` | Error: ${data.error}`;
+            setTrainingLogs(prev => [...prev, logStr]);
+          } else if (data.type === 'prediction_started') {
+            const logStr = `[Inference] Queue started for Data ID: ${data.data_id} (Status: ${data.status})`;
+            setInferenceLogs(prev => [...prev, logStr]);
+          } else if (data.type === 'prediction_completed') {
+            let logStr = `[Inference] Queue completed for Data ID: ${data.data_id} (Status: ${data.status})`;
+            if (data.mask_path) logStr += ` | Mask Path: ${data.mask_path}`;
+            if (data.error) logStr += ` | Error: ${data.error}`;
+            setInferenceLogs(prev => [...prev, logStr]);
+          }
+        } catch (err) {
+          console.error("Failed to parse websocket message:", err);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error("WebSocket error:", err);
+      };
+
+      ws.onclose = () => {
+        setTrainingLogs(prev => [...prev, 'Disconnected from notification server. Reconnecting...']);
+        setInferenceLogs(prev => [...prev, 'Disconnected from notification server. Reconnecting...']);
+        reconnectTimeout = setTimeout(connectWS, 3000);
+      };
+    };
+
+    connectWS();
+
+    return () => {
+      if (ws) ws.close();
+      clearTimeout(reconnectTimeout);
+    };
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="flex flex-col gap-8">
         
         {/* Top Widgets */}
-        <div className="flex gap-8">
-          {/* Terminal / Training Progress */}
+        <div className="flex gap-8 items-stretch">
+          
+          {/* Training Logs Terminal */}
           <div className="flex-1 bg-[#393e41] border-[6px] border-black rounded-[16px] h-[350px] flex flex-col overflow-hidden shadow-lg">
-            <div className="bg-black/50 px-4 py-2 border-b border-black flex items-center">
-              <span className="text-white font-bold tracking-wider text-sm">TRAINING_PROGRESS_LOG</span>
+            <div className="bg-black/50 px-4 py-2 border-b border-black flex items-center justify-between">
+              <span className="text-white font-bold tracking-wider text-xs">TRAINING_LOGS_STREAM</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
             </div>
-            <div className="p-4 font-mono text-xs text-green-400 overflow-y-auto h-full flex flex-col gap-1">
-              <p>&gt; Initializing U-Net Model Architecture...</p>
-<p>&gt; Loading dataset from Project_ID: 12, Group_ID: 45...</p>
-<p>&gt; Preprocessing: Resize (256x256), Normalize (divide_255)...</p>
-<p>&gt; Starting Epoch 1/50</p>
-<p className="text-yellow-400">&gt; Epoch 1: loss: 0.6841 - accuracy: 0.6421 - val_loss: 0.6521 - val_accuracy: 0.6912</p>
-<p className="text-yellow-400">&gt; Epoch 2: loss: 0.5121 - accuracy: 0.7812 - val_loss: 0.5812 - val_accuracy: 0.7512</p>
-<p className="animate-pulse">&gt; Epoch 3: Training in progress [=====&gt;............] 34%</p>
+            <div className="p-4 font-mono text-xs text-green-400 overflow-y-auto h-full flex flex-col gap-1 select-text">
+              {trainingLogs.map((log, i) => (
+                <p key={i}>&gt; {log}</p>
+              ))}
+              <div ref={trainingEndRef} />
+            </div>
+          </div>
+
+          {/* Inference Logs Terminal */}
+          <div className="flex-1 bg-[#393e41] border-[6px] border-black rounded-[16px] h-[350px] flex flex-col overflow-hidden shadow-lg">
+            <div className="bg-black/50 px-4 py-2 border-b border-black flex items-center justify-between">
+              <span className="text-white font-bold tracking-wider text-xs">INFERENCE_LOGS_STREAM</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse"></span>
+            </div>
+            <div className="p-4 font-mono text-xs text-cyan-400 overflow-y-auto h-full flex flex-col gap-1 select-text">
+              {inferenceLogs.map((log, i) => (
+                <p key={i}>&gt; {log}</p>
+              ))}
+              <div ref={inferenceEndRef} />
             </div>
           </div>
 
           {/* Quick Stats */}
-          <div className="w-[350px] bg-[#393e41] rounded-[16px] h-[350px] p-6 shadow-lg flex flex-col">
-            <h3 className="text-white text-2xl font-bold mb-6">Overview</h3>
-            <div className="flex flex-col gap-4">
+          <div className="w-[350px] bg-[#393e41] rounded-[16px] h-[350px] p-6 shadow-lg flex flex-col justify-between shrink-0">
+            <h3 className="text-white text-2xl font-bold mb-4">Overview</h3>
+            <div className="flex flex-col gap-4 flex-1 justify-center">
               <div className="bg-white/10 p-4 rounded-xl flex justify-between items-center text-white">
                 <span>Total Projects</span>
                 <span className="font-bold text-xl text-[#0091AD]">12</span>

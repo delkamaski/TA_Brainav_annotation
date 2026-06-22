@@ -29,6 +29,41 @@ export default function ModelsPage() {
 
   useEffect(() => {
     fetchModels();
+
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+
+    let ws: WebSocket;
+    let reconnectTimeout: any;
+
+    const connectWS = () => {
+      const backendUrl = api.defaults.baseURL || 'http://localhost:8080';
+      const wsUrl = backendUrl.replace(/^http/, 'ws') + '/ws/notifications';
+      
+      ws = new WebSocket(wsUrl, [token]);
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'model_status_update') {
+            fetchModels();
+          }
+        } catch (err) {
+          console.error("Models ws error:", err);
+        }
+      };
+
+      ws.onclose = () => {
+        reconnectTimeout = setTimeout(connectWS, 3000);
+      };
+    };
+
+    connectWS();
+
+    return () => {
+      if (ws) ws.close();
+      clearTimeout(reconnectTimeout);
+    };
   }, []);
 
   const handleDeleteModel = async (id: number) => {

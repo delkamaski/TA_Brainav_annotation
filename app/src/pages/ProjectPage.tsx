@@ -22,7 +22,6 @@ export default function ProjectsPage() {
   const fetchProjects = async () => {
     if (!user?.id) return;
     try {
-      // FIXED: Corrected endpoint path based on API Documentation
       const res = await api.get(`/project/user/${user.id}`);
       if (res.data.success) {
         setProjects(res.data.data || []);

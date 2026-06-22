@@ -70,15 +70,15 @@ export default function DataDetailedPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        if (projectId) {
+        if (projectId && projectId !== 'undefined') {
           const pRes = await api.get(`/project/${projectId}`);
           if (pRes.data.success) setProjectName(pRes.data.data.name);
         }
-        if (groupId) {
+        if (groupId && groupId !== 'undefined') {
           const gRes = await api.get(`/group/${groupId}`);
           if (gRes.data.success) setGroupName(gRes.data.data.name);
         }
-        if (dataId) {
+        if (dataId && dataId !== 'undefined') {
           const dRes = await api.get(`/data/${dataId}`);
           if (dRes.data.success) setDataItem(dRes.data.data);
         }
@@ -95,6 +95,7 @@ export default function DataDetailedPage() {
 
   // --- BULLETPROOF DATABASE LOADER ---
   const loadDatabaseMasks = async () => {
+    if (!dataId || dataId === 'undefined') return;
     try {
       const maskRes = await api.get(`/segmentationclass/data/${dataId}`);
       

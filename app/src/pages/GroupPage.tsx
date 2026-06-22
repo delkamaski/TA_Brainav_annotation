@@ -30,7 +30,7 @@ export default function GroupPage() {
         console.error("Failed to fetch project details");
       }
     };
-    if (projectId) fetchProjectDetails();
+    if (projectId && projectId !== 'undefined') fetchProjectDetails();
   }, [projectId]);
 
   const fetchGroups = async () => {
@@ -60,7 +60,7 @@ export default function GroupPage() {
   };
 
   useEffect(() => {
-    if (projectId) fetchGroups();
+    if (projectId && projectId !== 'undefined') fetchGroups();
   }, [projectId]);
 
   const handleCreateGroup = async (name: string) => {

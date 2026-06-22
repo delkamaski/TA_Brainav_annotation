@@ -24,11 +24,11 @@ export default function DataPage() {
   useEffect(() => {
     const fetchBreadcrumbNames = async () => {
       try {
-        if (projectId) {
+        if (projectId && projectId !== 'undefined') {
           const pRes = await api.get(`/project/${projectId}`);
           if (pRes.data.success) setProjectName(pRes.data.data.name);
         }
-        if (groupId) {
+        if (groupId && groupId !== 'undefined') {
           const gRes = await api.get(`/group/${groupId}`);
           if (gRes.data.success) setGroupName(gRes.data.data.name);
         }
@@ -48,7 +48,7 @@ export default function DataPage() {
     }
   };
 
-  useEffect(() => { if (groupId) fetchData(); }, [groupId]);
+  useEffect(() => { if (groupId && groupId !== 'undefined') fetchData(); }, [groupId]);
 
   const handleCreateData = async (payload: File[]) => {
     if (!Array.isArray(payload) || payload.length === 0) return;

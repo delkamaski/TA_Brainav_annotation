@@ -33,7 +33,7 @@ export default function TrainingPage() {
     }).catch(() => toast.error("Failed to load projects"));
 
     // 2. Fetch User's Compiled Models
-    api.get(`/parameters/model/user`).then(res => {
+    api.get(`/model/user`).then(res => {
       if (res.data.success) setModels(res.data.data || []);
     }).catch(() => toast.error("Failed to load architectures"));
     
@@ -93,7 +93,7 @@ export default function TrainingPage() {
     try {
       const toastId = toast.loading("Submitting training job to the ML queue...");
       
-      await api.post('/training/train/start', payload); 
+      await api.post('/training/train', payload); 
       
       toast.success("Training sequence initiated! Check the Dashboard for progress logs.", { id: toastId });
     } catch (err: any) {

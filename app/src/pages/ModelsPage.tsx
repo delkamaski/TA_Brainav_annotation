@@ -17,7 +17,7 @@ export default function ModelsPage() {
   const fetchModels = async () => {
     try {
       // FIX: Changed from '/model/user' to point to our newly created endpoint
-      const res = await api.get('/parameters/model/user');
+      const res = await api.get('/model/user');
       
       if (res.data.success) {
         setModels(res.data.data || []);
@@ -35,7 +35,7 @@ export default function ModelsPage() {
     if (!window.confirm(`Are you sure you want to delete Model #${id}?`)) return;
     
     try {
-      await api.delete(`/parameters/model/${id}`);
+      await api.delete(`/model/${id}`);
       toast.success("Model deleted successfully!");
       fetchModels(); // Refresh the grid
     } catch (err: any) {

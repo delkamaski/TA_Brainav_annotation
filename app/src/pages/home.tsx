@@ -15,7 +15,8 @@ export default function HomePage() {
         const res = await api.get('/group/');
         if (res.data.success) {
           // Sort by newest and take top 4
-          const sorted = res.data.data.sort((a: any, b: any) => b.ID - a.ID).slice(0, 4);
+          const allGroups = res.data.data || [];
+          const sorted = allGroups.sort((a: any, b: any) => b.ID - a.ID).slice(0, 4);
           setRecentGroups(sorted);
         }
       } catch (err: any) {

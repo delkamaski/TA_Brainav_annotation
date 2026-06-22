@@ -3,7 +3,7 @@ import axios from 'axios';
 // Create a configured axios instance
 export const api = axios.create({
   // Use empty string to rely on your Vite/CRA proxy, or set a full URL like 'http://localhost:8080'
-  baseURL: '', 
+  baseURL: 'http://localhost:8080', 
 });
 
 // Request Interceptor: Automatically inject the Bearer token into every request

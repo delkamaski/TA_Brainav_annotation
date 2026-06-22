@@ -15,8 +15,11 @@ const LayerNode = ({ data, selected }: { data: any, selected: boolean }) => {
     switch (data.type) {
       case 'Input': return 'bg-gray-200 border-gray-500 text-gray-800';
       case 'Conv2D': return 'bg-blue-100 border-blue-500 text-blue-800';
+      case 'MaxPooling2D':
       case 'MaxPool2D': return 'bg-red-100 border-red-500 text-red-800';
+      case 'Conv2DTranspose':
       case 'UpConv2D': return 'bg-green-100 border-green-500 text-green-800';
+      case 'Concatenate':
       case 'Concat': return 'bg-purple-100 border-purple-500 text-purple-800';
       case 'Output': return 'bg-yellow-100 border-yellow-500 text-yellow-800';
       default: return 'bg-white border-gray-400';
@@ -58,7 +61,7 @@ export default function ModelEditorPage() {
 
   useEffect(() => {
     if (modelId && modelId !== 'new') {
-      api.get(`/parameters/model/${modelId}`).then(res => {
+      api.get(`/model/${modelId}`).then(res => {
         if (res.data.success && res.data.data.layers) {
           const loadedLayers = res.data.data.layers;
           
@@ -106,7 +109,9 @@ export default function ModelEditorPage() {
     
     let defaultParams = {};
     if (type === 'Conv2D') defaultParams = { filters: 64, kernel_size: 3, activation: 'relu', padding: 'same' };
-    if (type === 'MaxPool2D') defaultParams = { pool_size: 2, strides: 2 };
+    if (type === 'MaxPooling2D' || type === 'MaxPool2D') defaultParams = { pool_size: 2, strides: 2, padding: 'valid' };
+    if (type === 'Conv2DTranspose' || type === 'UpConv2D') defaultParams = { filters: 32, kernel_size: 2, strides: 2, padding: 'same', activation: 'none' };
+    if (type === 'Concatenate' || type === 'Concat') defaultParams = { axis: -1 };
     if (type === 'Input') defaultParams = { shape: '256,256,3' };
     if (type === 'Output') defaultParams = { filters: 1, kernel_size: 1, activation: 'sigmoid' };
 
@@ -200,10 +205,10 @@ export default function ModelEditorPage() {
     
     try {
       if (modelId === 'new') {
-        await api.post('/parameters/model', payload);
+        await api.post('/model/', payload);
         toast.success("Architecture compiled and saved successfully!");
       } else {
-        await api.put(`/parameters/model/${modelId}`, payload);
+        await api.put(`/model/${modelId}`, payload);
         toast.success("Architecture updated successfully!");
       }
       navigate('/models'); 
@@ -240,9 +245,9 @@ export default function ModelEditorPage() {
              <h3 className="font-bold text-[#393E41] border-b pb-2">Layers Library</h3>
              <div draggable onDragStart={(e) => e.dataTransfer.setData('application/reactflow', 'Input')} className="bg-gray-200 border-gray-500 text-gray-800 p-2 rounded cursor-grab text-sm text-center font-bold">Input</div>
              <div draggable onDragStart={(e) => e.dataTransfer.setData('application/reactflow', 'Conv2D')} className="bg-blue-100 border-blue-500 text-blue-800 p-2 rounded cursor-grab text-sm text-center font-bold">Conv2D</div>
-             <div draggable onDragStart={(e) => e.dataTransfer.setData('application/reactflow', 'MaxPool2D')} className="bg-red-100 border-red-500 text-red-800 p-2 rounded cursor-grab text-sm text-center font-bold">MaxPool2D</div>
-             <div draggable onDragStart={(e) => e.dataTransfer.setData('application/reactflow', 'UpConv2D')} className="bg-green-100 border-green-500 text-green-800 p-2 rounded cursor-grab text-sm text-center font-bold">UpConv2D</div>
-             <div draggable onDragStart={(e) => e.dataTransfer.setData('application/reactflow', 'Concat')} className="bg-purple-100 border-purple-500 text-purple-800 p-2 rounded cursor-grab text-sm text-center font-bold">Concat (Skip)</div>
+             <div draggable onDragStart={(e) => e.dataTransfer.setData('application/reactflow', 'MaxPooling2D')} className="bg-red-100 border-red-500 text-red-800 p-2 rounded cursor-grab text-sm text-center font-bold">MaxPooling2D</div>
+             <div draggable onDragStart={(e) => e.dataTransfer.setData('application/reactflow', 'Conv2DTranspose')} className="bg-green-100 border-green-500 text-green-800 p-2 rounded cursor-grab text-sm text-center font-bold">Conv2DTranspose</div>
+             <div draggable onDragStart={(e) => e.dataTransfer.setData('application/reactflow', 'Concatenate')} className="bg-purple-100 border-purple-500 text-purple-800 p-2 rounded cursor-grab text-sm text-center font-bold">Concat (Skip)</div>
              <div draggable onDragStart={(e) => e.dataTransfer.setData('application/reactflow', 'Output')} className="bg-yellow-100 border-yellow-500 text-yellow-800 p-2 rounded cursor-grab text-sm text-center font-bold">Output (Sigmoid)</div>
           </div>
 

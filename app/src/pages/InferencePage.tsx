@@ -112,17 +112,9 @@ export default function InferencePage() {
   // 2. Fetch Groups when Project changes
   useEffect(() => {
     if (selectedProject) {
-      api.get(`/group/`).then(res => {
+      api.get(`/group/project/${selectedProject}`).then(res => {
         if (res.data.success) {
-          const allGroups = res.data.data || [];
-          const projectGroups = allGroups.filter((g: any) => 
-            String(g.project_id) === String(selectedProject) || String(g.ProjectID) === String(selectedProject)
-          );
-          if (projectGroups.length === 0 && allGroups.length > 0) {
-            setGroups(allGroups);
-          } else {
-            setGroups(projectGroups);
-          }
+          setGroups(res.data.data || []);
         }
       }).catch(() => toast.error("Failed to load groups"));
     } else {

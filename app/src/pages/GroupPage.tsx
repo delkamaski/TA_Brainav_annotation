@@ -33,35 +33,21 @@ export default function GroupPage() {
     if (projectId && projectId !== 'undefined') fetchProjectDetails();
   }, [projectId]);
 
-  const fetchGroups = async () => {
+  const fetchGroups = React.useCallback(async () => {
     try {
-      const res = await api.get(`/group/`);
+      const res = await api.get(`/group/project/${projectId}`);
       if (res.data.success) {
-        // FIX 1: Safely default to an empty array so JavaScript doesn't crash on null
-        const allGroups = res.data.data || [];
-        
-        // Safely filter by project ID
-        const projectGroups = allGroups.filter((g: any) => 
-          String(g.project_id) === String(projectId) || String(g.ProjectID) === String(projectId)
-        );
-        
-        // FIX 2: If the backend drops the ProjectID, bypass the filter so your group still shows up!
-        if (projectGroups.length === 0 && allGroups.length > 0) {
-          console.warn("Backend didn't send ProjectID! Showing all groups as a fallback.");
-          setGroups(allGroups);
-        } else {
-          setGroups(projectGroups);
-        }
+        setGroups(res.data.data || []);
       }
     } catch (err) {
       console.error("Fetch Error:", err);
       toast.error("Failed to fetch groups");
     }
-  };
+  }, [projectId]);
 
   useEffect(() => {
     if (projectId && projectId !== 'undefined') fetchGroups();
-  }, [projectId]);
+  }, [projectId, fetchGroups]);
 
   const handleCreateGroup = async (name: string) => {
     try {
